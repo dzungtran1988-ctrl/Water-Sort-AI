@@ -63,9 +63,6 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize Gemini
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
   const saveToHistory = () => {
     setHistory(prev => [...prev, tubes.map(t => [...t])]);
   };
@@ -172,14 +169,22 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      setStatus('Lỗi: Thiếu GEMINI_API_KEY. Vui lòng cấu hình biến môi trường trên Vercel.');
+      console.error('Missing GEMINI_API_KEY. Ensure it is set in your environment variables.');
+      return;
+    }
+
     setIsAnalyzing(true);
-    setStatus('Analyzing image with AI...');
+    setStatus('Đang phân tích hình ảnh bằng AI...');
 
     try {
       const base64 = await fileToBase64(file);
+      const ai = new GoogleGenAI({ apiKey });
       
       const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-3-flash-preview",
         contents: [
           {
             parts: [
@@ -208,19 +213,25 @@ No markdown, no 'json' tags.` },
       });
 
       const text = response.text || '';
-      const cleanJson = text.replace(/```json|```/g, "").trim();
+      // Extract JSON from potential markdown blocks
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      const cleanJson = jsonMatch ? jsonMatch[0] : text.replace(/```json|```/g, "").trim();
       const parsedTubes = JSON.parse(cleanJson) as Color[][];
       
       const finalTubes = [...parsedTubes];
       while (finalTubes.length < 12) finalTubes.push([]);
       
       setTubes(finalTubes.slice(0, 12));
-      setStatus('AI Analysis complete!');
+      setStatus('Phân tích AI hoàn tất!');
       setSolution([]);
       setSolutionIndex(-1);
     } catch (error) {
       console.error('AI Error:', error);
-      setStatus('Failed to analyze image. Please try again or edit manually.');
+      if (error instanceof Error && error.message.includes('API_KEY_INVALID')) {
+        setStatus('Lỗi: API Key không hợp lệ.');
+      } else {
+        setStatus('Lỗi phân tích hình ảnh. Vui lòng kiểm tra console để biết chi tiết.');
+      }
     } finally {
       setIsAnalyzing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
